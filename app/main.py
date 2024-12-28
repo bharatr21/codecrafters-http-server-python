@@ -71,8 +71,11 @@ async def handle_client(reader, writer):
             elif path.startswith('/echo'): # Handle /echo/{str}
                 path_params = path.split('/')[1:]
                 headers['Content-Type'] = 'text/plain'
-                if 'Accept-Encoding' in headers and headers['Accept-Encoding'] in VALID_ENCODING_SCHEMES:
-                    headers['Content-Encoding'] = headers['Accept-Encoding']
+                if 'Accept-Encoding' in headers:
+                    encodings = headers['Accept-Encoding'].split(',')
+                    valid_encodings = [encoding.strip() for encoding in encodings if encoding.strip() in VALID_ENCODING_SCHEMES]
+                    if valid_encodings:
+                        headers['Content-Encoding'] = ', '.join(valid_encodings)
                 response = make_response(200, headers=headers, body=path_params[-1])
             elif path.startswith('/user-agent'): # Handle /user-agent
                 user_agent = headers.get('User-Agent', 'Unknown')
