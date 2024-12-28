@@ -1,6 +1,6 @@
 import socket
 import asyncio
-import sys
+import gzip
 from argparse import ArgumentParser
 
 GLOBALS = {}
@@ -17,17 +17,21 @@ status_message = {
 
 VALID_ENCODING_SCHEMES = ['gzip', 'deflate', 'br', 'compress', 'identity', 'zstd', '*']
 
-def make_response(status_code, protocol='HTTP/1.1', headers={}, body=''):
+def make_response(status_code, protocol='HTTP/1.1', headers={}, body='', binary=False):
     if body:
         headers['Content-Length'] = len(body)
     response = (
         f'{protocol} {status_code} {status_message[status_code]}\r\n'
         + '\r\n'.join([f'{key}: {value}' for key, value in headers.items()])
         + '\r\n\r\n'
-        + body
     )
-    print(f"HTTP constructed response: {response}")
-    return response.encode()
+    if binary:
+        response = response.encode()
+        response += body
+    else:
+        response += body
+        response = response.encode()
+    return response
 
 def read_file(directory, filename):
     try:
@@ -71,12 +75,24 @@ async def handle_client(reader, writer):
             elif path.startswith('/echo'): # Handle /echo/{str}
                 path_params = path.split('/')[1:]
                 headers['Content-Type'] = 'text/plain'
+                response = b''
                 if 'Accept-Encoding' in headers:
                     encodings = headers['Accept-Encoding'].split(',')
                     valid_encodings = [encoding.strip() for encoding in encodings if encoding.strip() in VALID_ENCODING_SCHEMES]
                     if valid_encodings:
                         headers['Content-Encoding'] = ', '.join(valid_encodings)
-                response = make_response(200, headers=headers, body=path_params[-1])
+                        body = path_params[-1]
+                        if 'gzip' in valid_encodings:
+                            compressed_text = gzip.compress(body.encode())
+                        elif 'deflate' in valid_encodings:
+                            compressed_text = gzip.compress(body.encode(), compresslevel=1)
+                        elif 'br' in valid_encodings:
+                            compressed_text = gzip.compress(body.encode(), compresslevel=9)
+                        elif 'zstd' in valid_encodings:
+                            compressed_text = gzip.compress(body.encode(), compresslevel=22)
+                        response = make_response(200, headers=headers, body=compressed_text, binary=True)
+                if not response:
+                    response = make_response(200, headers=headers, body=path_params[-1])
             elif path.startswith('/user-agent'): # Handle /user-agent
                 user_agent = headers.get('User-Agent', 'Unknown')
                 headers['Content-Type'] = 'text/plain'
