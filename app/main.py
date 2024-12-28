@@ -19,8 +19,12 @@ def main():
         print(f"Request data: {data}")
         url_item = data[0].split(' ')
         method, path, protocol = url_item
+        path = path.lower()
         if path == '/':
             client.sendall(b'HTTP/1.1 200 OK\r\n\r\n')
+        elif path.startswith('/echo'): # Handle /echo/{str}
+            path_params = path.split('/')[1:]
+            client.sendall(f'HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: {len(path_params[-1])}\r\n\r\n{path_params[-1]}'.encode())
         else:
             client.sendall(b'HTTP/1.1 404 Not Found\r\n\r\n')
     client.close()
