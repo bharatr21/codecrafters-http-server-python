@@ -6,6 +6,29 @@ from argparse import ArgumentParser
 GLOBALS = {}
 MAX_BYTES = 2**16
 
+status_message = {
+    200: 'OK',
+    201: 'Created',
+    400: 'Bad Request',
+    404: 'Not Found',
+    405: 'Method Not Allowed',
+    422: 'Unprocessable Entity'
+}
+
+VALID_ENCODING_SCHEMES = ['gzip', 'deflate', 'br', 'compress', 'identity', 'zstd', '*']
+
+def make_response(status_code, protocol='HTTP/1.1', headers={}, body=''):
+    if body:
+        headers['Content-Length'] = len(body)
+    response = (
+        f'{protocol} {status_code} {status_message[status_code]}\r\n'
+        + '\r\n'.join([f'{key}: {value}' for key, value in headers.items()])
+        + '\r\n\r\n'
+        + body
+    )
+    print(f"HTTP constructed response: {response}")
+    return response.encode()
+
 def read_file(directory, filename):
     try:
         with open(f'/{directory}/{filename}', 'rb') as file:
@@ -44,34 +67,37 @@ async def handle_client(reader, writer):
             body = body.decode()
             path = path.lower()
             if path == '/':
-                response = b'HTTP/1.1 200 OK\r\n\r\n'
+                response = make_response(200)
             elif path.startswith('/echo'): # Handle /echo/{str}
                 path_params = path.split('/')[1:]
-                response = f'HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: {len(path_params[-1])}\r\n\r\n{path_params[-1]}'.encode()
+                headers['Content-Type'] = 'text/plain'
+                if 'Accept-Encoding' in headers and headers['Accept-Encoding'] in VALID_ENCODING_SCHEMES:
+                    headers['Content-Encoding'] = headers['Accept-Encoding']
+                response = make_response(200, headers=headers, body=path_params[-1])
             elif path.startswith('/user-agent'): # Handle /user-agent
                 user_agent = headers.get('User-Agent', 'Unknown')
-                response = f'HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: {len(user_agent)}\r\n\r\n{user_agent}'.encode()
+                headers['Content-Type'] = 'text/plain'
+                response = make_response(200, headers=headers, body=user_agent)
             elif path.startswith('/files'):
                     directory = GLOBALS['DIR']
                     filename = path.split('/')[-1]
                     if method == 'GET':
                         file_exists, file_size, content = read_file(directory, filename)
                         if file_exists:
-                            response = f'HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\nContent-Length: {file_size}\r\n\r\n'.encode()
-                            response += content
+                            response = make_response(200, headers={"Content-Type": "application/octet-stream"}, body=content.decode())
                         else:
-                            response = b'HTTP/1.1 404 Not Found\r\n\r\n'
+                            response = make_response(404)
                     elif method == 'POST':
                         content = body.encode()
                         success = create_file(directory, filename, content)
                         if success:
-                            response = b'HTTP/1.1 201 Created\r\n\r\n'
+                            response = make_response(201)
                         else:
-                            response = b'HTTP/1.1 422 Unprocessable Entity \r\n\r\n'
+                            response = make_response(422)
                     else:
-                        response = b'HTTP/1.1 405 Method Not Allowed\r\n\r\n'
+                        response = make_response(405)
             else:
-                response = b'HTTP/1.1 404 Not Found\r\n\r\n'
+                response = make_response(404)
             writer.write(response)
             await writer.drain()
     except Exception as e:
