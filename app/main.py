@@ -1,5 +1,15 @@
 import socket
 import asyncio
+import sys
+
+def handle_file(directory, filename):
+    try:
+        with open(f'/{directory}/{filename}', 'rb') as file:
+            content = file.read()
+            file_size = len(content)
+            return True, file_size, content
+    except FileNotFoundError:
+        return False, 0, b''
 
 async def handle_client(reader, writer):
     client_address = writer.get_extra_info('peername')
@@ -27,6 +37,15 @@ async def handle_client(reader, writer):
                 response = f'HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: {len(path_params[-1])}\r\n\r\n{path_params[-1]}'.encode()
             elif path.startswith('/user-agent'): # Handle /user-agent
                 response = f'HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: {len(user_agent)}\r\n\r\n{user_agent}'.encode()
+            elif path.startswith('/files'):
+                directory = sys.argv[2]
+                filename = path.split('/')[-1]
+                file_exists, file_size, content = handle_file(directory, filename)
+                if file_exists:
+                    response = f'HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\nContent-Length: {file_size}\r\n\r\n'.encode()
+                    response += content
+                else:
+                    response = b'HTTP/1.1 404 Not Found\r\n\r\n'
             else:
                 response = b'HTTP/1.1 404 Not Found\r\n\r\n'
             writer.write(response)
